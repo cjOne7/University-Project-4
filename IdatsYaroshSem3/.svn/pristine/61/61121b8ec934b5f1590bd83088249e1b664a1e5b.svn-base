@@ -1,0 +1,287 @@
+package idatsyaroshsem3;
+
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
+import java.net.URL;
+import java.time.*;
+import java.time.Month;
+import java.util.Comparator;
+import java.util.InputMismatchException;
+import java.util.Iterator;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.ResourceBundle;
+import java.util.Scanner;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+import java.util.stream.Collectors;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import javafx.event.ActionEvent;
+import javafx.fxml.FXML;
+import javafx.fxml.Initializable;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.DatePicker;
+import javafx.scene.control.ListView;
+import javafx.scene.control.TextField;
+import measurement.GenerateMeasurements;
+import measurement.Measurement;
+import priorityqueue.AbstrPriorQueue;
+
+public class FXMLDocumentController implements Initializable {
+
+    private ObservableList<Measurement> measurements = FXCollections.observableArrayList();
+    private List<Integer> sensorIds;
+    private List<Measurement> sortedList;
+    private AbstrPriorQueue<Measurement> priorQueueOfMeasurements;
+    private Comparator<Measurement> comparator = (m1, m2) -> {
+        final Double d1 = m1.getM3();
+        final Double d2 = m2.getM3();
+        return d1.compareTo(d2);
+    };
+    private Set<Integer> setOfSensors;
+
+    @FXML
+    private ListView<Measurement> listViewForQueue;
+    @FXML
+    private ListView<Measurement> listViewForPriorityQueue;
+    @FXML
+    private Button addElementBtn;
+    @FXML
+    private Button deleteElementBtn;
+    @FXML
+    private DatePicker datePickerTo;
+    @FXML
+    private DatePicker datePickerFrom;
+    @FXML
+    private ComboBox<Integer> sensorIdComboBox;
+    @FXML
+    private Button buildPQBtn;
+    @FXML
+    private TextField textFieldForMaxNumber;
+    @FXML
+    private Button clearPQBtn;
+    @FXML
+    private TextField randomMeasurements;
+    @FXML
+    private Button saveInTxtBtn;
+
+    @Override
+    public void initialize(URL url, ResourceBundle rb) {
+        datePickerFrom.setValue(LocalDate.of(2018, Month.JUNE, 1));
+        datePickerTo.setValue(LocalDate.of(2018, Month.JUNE, 1));
+        readFile();
+        sensorIds = new LinkedList<>(setOfSensors);
+        sensorIdComboBox.getItems().addAll(sensorIds);
+        sensorIdComboBox.setValue(sensorIds.get(1));
+
+        priorQueueOfMeasurements
+                = new AbstrPriorQueue<>(Integer.parseInt(textFieldForMaxNumber.getText()), comparator);
+
+        textFieldForMaxNumber.setOnMouseClicked(event -> textFieldForMaxNumber.selectAll());
+        randomMeasurements.setOnMouseClicked(event -> randomMeasurements.selectAll());
+        textFieldForMaxNumber.textProperty().addListener((observable, oldValue, newValue)
+                -> priorQueueOfMeasurements.setMaxNumberOfValues(parseTextToInt(newValue, textFieldForMaxNumber, oldValue))
+        );
+        randomMeasurements.textProperty().addListener((observable, oldValue, newValue)
+                -> parseTextToInt(newValue, randomMeasurements, oldValue)
+        );
+    }
+
+    private void readFile() {
+        setOfSensors = new TreeSet<>();
+        try {
+            final Scanner input = new Scanner(new File("data.csv"));
+            input.nextLine();//Skip first line
+            while (input.hasNextLine()) {
+                final String str = input.nextLine();//get new line
+                final String[] data = str.split(";");//split this line
+                try {
+                    setOfSensors.add(Integer.parseInt(data[1]));//add to set sensor id
+                    final Measurement measurement = new Measurement(
+                            Integer.parseInt(data[0]),
+                            Integer.parseInt(data[1]),
+                            data[2],
+                            Double.parseDouble(data[3]));//create a new measurement
+                    measurements.add(measurement);//add to general pool the new measurement
+                } catch (InputMismatchException | NumberFormatException ex) {
+                    callAlertWindow("Error", "You have some wrong numbers in file.", Alert.AlertType.ERROR);
+                }
+            }
+        } catch (FileNotFoundException ex) {
+            callAlertWindow("Error", "File not found", Alert.AlertType.ERROR);
+        }
+    }
+
+    @FXML
+    private void loadData(ActionEvent event) {
+        final long localDateFrom = datePickerFrom.getValue().toEpochDay();
+        final long localDateTo = datePickerTo.getValue().toEpochDay();
+        final int sensorId = sensorIdComboBox.getValue();
+
+        sortedList = measurements.stream()
+                .filter((measurement) -> {
+                    long currentEpochDay = measurement.getTime().toLocalDate().toEpochDay();
+                    return currentEpochDay >= localDateFrom
+                            && currentEpochDay <= localDateTo
+                            && measurement.getSensorId() == sensorId;
+                })
+                .collect(Collectors.toList());
+        listViewForQueue.getItems().clear();
+        listViewForQueue.getItems().addAll(sortedList);
+        if (!sortedList.isEmpty()) {
+            buildPQBtn.setDisable(false);
+            addElementBtn.setDisable(false);
+        }
+    }
+
+    @FXML
+    private void buildPQ(ActionEvent event) {
+        writeTime();
+        listViewForPriorityQueue.getItems().clear();
+        final Iterator<Measurement> it = priorQueueOfMeasurements.getPriorityList().iterator();
+        while (it.hasNext()) {
+            final Measurement measurement = it.next();
+            listViewForPriorityQueue.getItems().add(measurement);
+            listViewForQueue.getItems().remove(measurement);
+        }
+        if (!priorQueueOfMeasurements.jePrazdny()) {
+            changeDisable(false);
+        }
+    }
+
+    private void writeTime() {
+        final long start = System.currentTimeMillis();
+        priorQueueOfMeasurements.vududuj(sortedList);
+        final long end = System.currentTimeMillis();
+        System.out.println("Duration of bulding: " + Math.abs(end - start) + " ms");
+    }
+
+    @FXML
+    private void addElementToPQ(ActionEvent event) {
+        final Measurement measurement = listViewForQueue.getSelectionModel().getSelectedItem();
+        if (measurement != null) {
+
+            priorQueueOfMeasurements.vloz(measurement);
+            listViewForQueue.getItems().remove(measurement);
+            sortedList.remove(measurement);
+
+            if (priorQueueOfMeasurements.getActualNumberOfValues() >= priorQueueOfMeasurements.getMaxNumberOfValues()) {
+                final Iterator<Measurement> it = priorQueueOfMeasurements.getListForOtherElements().iterator();
+                while (it.hasNext()) {
+                    final Measurement m = it.next();
+                    listViewForQueue.getItems().add(m);
+                }
+                priorQueueOfMeasurements.getListForOtherElements().zrus();
+            }
+            refreshPriorityList();
+        } else {
+            callAlertWindow("Error", "Element is not selected!", Alert.AlertType.ERROR);
+        }
+        if (listViewForPriorityQueue.getItems().size() >= 1) {
+            changeDisable(false);
+        }
+    }
+
+    @FXML
+    private void deleteElementFromPQ(ActionEvent event) {
+        final Measurement measurement = priorQueueOfMeasurements.odeberMax();
+        listViewForPriorityQueue.getItems().remove(measurement);
+
+        sortedList.add(measurement);
+        listViewForQueue.getItems().add(measurement);
+        System.out.println(measurement);
+
+        if (listViewForPriorityQueue.getItems().isEmpty()) {
+            changeDisable(true);
+        }
+    }
+
+    private void changeDisable(final boolean state) {
+        deleteElementBtn.setDisable(state);
+        clearPQBtn.setDisable(state);
+        saveInTxtBtn.setDisable(state);
+    }
+
+    private void refreshPriorityList() {
+        final Iterator<Measurement> it = priorQueueOfMeasurements.getPriorityList().iterator();
+        listViewForPriorityQueue.getItems().clear();
+        while (it.hasNext()) {
+            listViewForPriorityQueue.getItems().add(it.next());
+        }
+    }
+
+    @FXML
+    private void clearPQ(ActionEvent event) {
+        changeDisable(true);
+        final Iterator<Measurement> it = priorQueueOfMeasurements.getPriorityList().iterator();
+        while (it.hasNext()) {
+            final Measurement measurement = it.next();
+            listViewForPriorityQueue.getItems().remove(measurement);
+            listViewForQueue.getItems().add(measurement);
+            sortedList.add(measurement);
+        }
+        listViewForPriorityQueue.getItems().clear();
+        priorQueueOfMeasurements.zrus();
+    }
+
+    @FXML
+    private void generate(ActionEvent event) {
+        final int number = Integer.parseInt(randomMeasurements.getText());
+        sortedList = GenerateMeasurements.generateMeasurements(number, sensorIds);
+        listViewForPriorityQueue.getItems().clear();
+        listViewForQueue.getItems().clear();
+        priorQueueOfMeasurements.zrus();
+        listViewForQueue.getItems().addAll(sortedList);
+        if (number >= 1) {
+            buildPQBtn.setDisable(false);
+            addElementBtn.setDisable(false);
+        }
+    }
+
+    private int parseTextToInt(final String text, final TextField textField, final String oldValue) {
+        try {
+            return Integer.parseInt(text);
+        } catch (NumberFormatException e) {
+            textField.setText(oldValue);
+            return Integer.parseInt(oldValue);
+        }
+    }
+
+    public static Alert callAlertWindow(
+            final String titleText,
+            final String contextText,
+            final Alert.AlertType alertType) {
+        final Alert alert = new Alert(alertType);
+        alert.setTitle(titleText);
+        alert.setHeaderText(null);
+        alert.setContentText(contextText);
+        alert.showAndWait();
+        return alert;
+    }
+
+    @FXML
+    private void saveInTxt(ActionEvent event) {
+        try (PrintWriter printWriter = new PrintWriter(new BufferedWriter(new FileWriter(new File("PriorityQueue.txt"))))) {
+            System.out.println("\nStart writing in file 'PriorityQueue.txt'\n.\n..\n...");
+            printWriter.println("id;sensor_id;time;m3");
+
+            final Iterator<Measurement> it = priorQueueOfMeasurements.getPriorityList().iterator();
+            while (it.hasNext()) {
+                printWriter.println(it.next().toStringForFile());
+            }
+            System.out.println("Your file is successfully written.\n" + "Written: "
+                    + priorQueueOfMeasurements.getActualNumberOfValues() + " objects.");
+        } catch (IOException ex) {
+            Logger.getLogger(FXMLDocumentController.class.getName()).log(Level.SEVERE, null, ex);
+        }
+    }
+}

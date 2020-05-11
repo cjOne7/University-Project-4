@@ -1,0 +1,183 @@
+package priorityqueue;
+
+import collection.AbstrDoubleList;
+import collection.DoubleList;
+import collection.KolekceException;
+import java.util.Comparator;
+import java.util.Iterator;
+import java.util.List;
+import java.util.NoSuchElementException;
+
+public class AbstrPriorQueue<T> implements PriorQueue<T> {
+
+    private DoubleList<T> priorityList = new AbstrDoubleList<>();
+    private DoubleList<T> listForOtherElements = new AbstrDoubleList<>();
+    private Comparator<T> comparator;
+    private int actualNumberOfValues;
+    private int maxNumberOfValues = 10;
+
+    public AbstrPriorQueue(final int maxNumberOfValues, final Comparator comparator) {
+        if (maxNumberOfValues == 0) {
+            throw new IllegalArgumentException("Priority queue can't be 0 sized.");
+        }
+        if (comparator == null) {
+            throw new NullPointerException("Comparator is null");
+        }
+        this.maxNumberOfValues = maxNumberOfValues;
+        this.comparator = comparator;
+    }
+////////////////////////////////////////////////////////////////////////////////
+    // FIXME Tato metoda je zakázaná, zrušit, není v zadání práce, odkrývání implementace struktury
+
+    public DoubleList<T> getPriorityList() {
+        return priorityList;
+    }
+    // FIXME Tato metoda je zakázaná , zrušit, není v zadání práce, odkrývání implementace struktury
+
+    public DoubleList<T> getListForOtherElements() {
+        return listForOtherElements;
+    }
+
+    public int getMaxNumberOfValues() {
+        return maxNumberOfValues;
+    }
+
+    public void setMaxNumberOfValues(int maxNumberOfValues) {
+        this.maxNumberOfValues = maxNumberOfValues;
+    }
+
+    public int getActualNumberOfValues() {
+        return actualNumberOfValues;
+    }
+
+////////////////////////////////////////////////////////////////////////////////
+    @Override
+    public void zrus() {
+        priorityList.zrus();
+        listForOtherElements.zrus();
+        actualNumberOfValues = 0;
+    }
+
+    @Override
+    public boolean jePrazdny() {
+        return priorityList.jePrazdny() && listForOtherElements.jePrazdny();
+    }
+
+    @Override
+    public void vloz(final T data) throws NullPointerException {
+        if (data == null) {
+            throw new NullPointerException("Element is null.");
+        }
+        if (priorityList.jePrazdny()) {
+            priorityList.vlozPrvni(data);
+            actualNumberOfValues++;
+            return;
+        }
+        if (actualNumberOfValues < maxNumberOfValues) {
+            T currentElement = priorityList.zpristupniPrvni();
+            while (currentElement != null) {
+                if (comparator.compare(currentElement, data) < 0) {
+                    priorityList.vlozPredchudce(data);
+                    actualNumberOfValues++;
+                    return;
+                } else {
+                    try {
+                        currentElement = priorityList.zpristupniNaslednika();
+                    } catch (NoSuchElementException e) {
+                        // FIXME Zachycení výjimky a pokračování v algoritmu se považuje za chybu
+                        if (priorityList.getMohutnost() != actualNumberOfValues + 1) {
+                            priorityList.vlozPosledni(data);
+                            actualNumberOfValues++;
+                        }
+                        return;
+                    }
+                }
+            }
+        } else {
+            T currentElement = priorityList.zpristupniPrvni();
+            while (currentElement != null) {
+                if (comparator.compare(currentElement, data) < 0) {
+                    priorityList.vlozPredchudce(data);
+                    listForOtherElements.vlozPosledni(priorityList.odeberPosledni());
+                    return;
+                } else {
+                    try {
+                        currentElement = priorityList.zpristupniNaslednika();
+                    } catch (NoSuchElementException e) {
+                        searchAndInput(data);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    private void searchAndInput(final T data) {
+        if (listForOtherElements.jePrazdny()) {
+            listForOtherElements.vlozPrvni(data);
+            return;
+        }
+        T currentElement = listForOtherElements.zpristupniPrvni();
+        while (currentElement != null) {
+            if (comparator.compare(currentElement, data) < 0) {
+                listForOtherElements.vlozPredchudce(data);
+                return;
+            } else {
+                try {
+                    currentElement = listForOtherElements.zpristupniNaslednika();
+                } catch (KolekceException | NoSuchElementException e) {
+                    listForOtherElements.vlozPrvni(data);
+                    break;
+                }
+            }
+        }
+    }
+
+    @Override
+    public T odeberMax() {
+        if (priorityList.jePrazdny()) {
+            return null;
+        }
+        final T value = priorityList.odeberPrvni();
+        if (listForOtherElements.jePrazdny()) {
+            actualNumberOfValues--;
+        } else {
+            // FIXME Nelze vložit libovolný prvek z nesetříděné části
+            priorityList.vlozPosledni(listForOtherElements.odeberPosledni());
+        }
+        return value;
+    }
+
+    @Override
+    public T zpristupni() {
+        return priorityList.jePrazdny() ? null : priorityList.zpristupniPrvni();
+    }
+
+    // FIXME Neni povoleno používat knihovní kolekce, stačí pouze pole, tak jak je to v zadání
+    @Override
+    public void vududuj(final List<T> data) throws NullPointerException {
+        if (data == null) {
+            throw new NullPointerException("Data is null.");
+        }
+        zrus();
+        for (int i = 0; i < data.size(); i++) {
+            T value = data.get(i);
+            vloz(value);
+        }
+    }
+
+    // FIXME Toto řešení itarátoru neberu, vyřešte bez pomocného seznamu
+    @Override
+    public Iterator<T> iterator() {
+        final DoubleList<T> doubleList = new AbstrDoubleList<>();
+        Iterator<T> it = priorityList.iterator();
+        while (it.hasNext()) {
+            doubleList.vlozPosledni(it.next());
+        }
+        it = listForOtherElements.iterator();
+        while (it.hasNext()) {
+            doubleList.vlozPosledni(it.next());
+        }
+        return doubleList.iterator();
+    }
+}
